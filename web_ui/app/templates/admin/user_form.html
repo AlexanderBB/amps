@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}{{ action if action else 'Edit' }} User{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">{{ action if action else 'Edit' }} User{{ ': ' + user.email if user else '' }}</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="email" class="form-label">Email address <span class="text-danger">*</span></label>
+                <input type="email" class="form-control" id="email" name="email" value="{{ user.email if user else '' }}" required>
+            </div>
+            {% if action == 'Create' %}
+            <div class="mb-3">
+                <label for="password" class="form-label">Password <span class="text-danger">*</span></label>
+                <input type="password" class="form-control" id="password" name="password" required>
+            </div>
+            {% endif %}
+            <div class="mb-3">
+                <label for="role" class="form-label">Role <span class="text-danger">*</span></label>
+                <select class="form-select" id="role" name="role" required>
+                    <option value="user" {% if user and user.role == 'user' %}selected{% endif %}>User</option>
+                    <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <button type="submit" class="btn btn-primary">{{ action if action else 'Update' }} User</button>
+                <a href="{{ url_for('admin.list_users') }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

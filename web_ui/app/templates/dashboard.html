@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Dashboard</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card text-white bg-primary mb-3">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-collection"></i> Total Records</h5>
+                <p class="card-text fs-2">{{ current_user.records|length if current_user.role != 'admin' else 'All' }}</p>
+                <a href="{{ url_for('records.list_records') }}" class="btn btn-outline-light btn-sm">View All</a>
+            </div>
+        </div>
+    </div>
+    {% if current_user.role == 'admin' %}
+    <div class="col-md-4">
+        <div class="card text-white bg-success mb-3">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-people"></i> Total Users</h5>
+                <p class="card-text fs-2">Manage</p>
+                <a href="{{ url_for('admin.list_users') }}" class="btn btn-outline-light btn-sm">Manage Users</a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

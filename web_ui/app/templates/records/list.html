@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Records{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Records</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('records.create_record') }}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-plus-circle"></i> New Record
+        </a>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Title</th>
+                {% if current_user.role == 'admin' %}<th>Owner</th>{% endif %}
+                <th>Created At</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for record in records %}
+            <tr>
+                <td>{{ record.id }}</td>
+                <td>{{ record.title }}</td>
+                {% if current_user.role == 'admin' %}<td>{{ record.owner.email }}</td>{% endif %}
+                <td>{{ record.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>
+                    <a href="{{ url_for('records.view_record', id=record.id) }}" class="btn btn-sm btn-outline-info"><i class="bi bi-eye"></i></a>
+                    <a href="{{ url_for('records.edit_record', id=record.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ record.id }}">
+                        <i class="bi bi-trash"></i>
+                    </button>
+
+                    <!-- Delete Modal -->
+                    <div class="modal fade" id="deleteModal{{ record.id }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Confirm Delete</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    Are you sure you want to delete record "{{ record.title }}"?
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                    <form action="{{ url_for('records.delete_record', id=record.id) }}" method="POST">
+                                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

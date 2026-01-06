@@ -21,7 +21,7 @@ services:
       - "--providers.docker.endpoint=tcp://docker-socket-proxy:2375"
       - "--providers.docker.httpClientTimeout=300"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=private"
+      - "--providers.docker.network=amps_private"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
@@ -52,7 +52,7 @@ services:
       - "--providers.docker.endpoint=tcp://docker-socket-proxy:2375"
       - "--providers.docker.httpClientTimeout=300"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=private"
+      - "--providers.docker.network=amps_private"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
@@ -96,16 +96,14 @@ services:
       - traefik_2
 
   app:
-    build: ./app
+    build: ./web_ui
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_HOST=${POSTGRES_HOST}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}/${POSTGRES_DB}
+      - SECRET_KEY=something-very-secret
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=private"
-      - "traefik.http.routers.app.rule=Host(`localhost`)"
+      - "traefik.docker.network=amps_private"
+      - "traefik.http.routers.app.rule=Host(`localhost`) || Host(`127.0.0.1`)"
       - "traefik.http.routers.app.entrypoints=websecure"
       - "traefik.http.routers.app.tls=true"
       - "traefik.http.services.app.loadbalancer.server.port=5000"
@@ -136,6 +134,7 @@ services:
       - "/sys:/host/sys:ro"
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     networks:
+      - public
       - private
     restart: always
 
@@ -144,11 +143,12 @@ services:
     ports:
       - "15672:15672"
     networks:
+      - public
       - private
     restart: always
 
   worker:
-    build: ./app
+    build: ./worker
     command: python worker.py
     environment:
       - POSTGRES_USER=${POSTGRES_USER}

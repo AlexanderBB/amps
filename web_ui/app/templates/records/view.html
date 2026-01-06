@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}View Record{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Record: {{ record.title }}</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('records.edit_record', id=record.id) }}" class="btn btn-sm btn-outline-secondary me-2">
+            <i class="bi bi-pencil"></i> Edit
+        </a>
+        <a href="{{ url_for('records.list_records') }}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-arrow-left"></i> Back to List
+        </a>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Details</h5>
+        <dl class="row">
+            <dt class="col-sm-3">ID</dt>
+            <dd class="col-sm-9">{{ record.id }}</dd>
+
+            <dt class="col-sm-3">Title</dt>
+            <dd class="col-sm-9">{{ record.title }}</dd>
+
+            <dt class="col-sm-3">Description</dt>
+            <dd class="col-sm-9">{{ record.description or 'No description' }}</dd>
+
+            <dt class="col-sm-3">Created At</dt>
+            <dd class="col-sm-9">{{ record.created_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+
+            <dt class="col-sm-3">Updated At</dt>
+            <dd class="col-sm-9">{{ record.updated_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+
+            {% if current_user.role == 'admin' %}
+            <dt class="col-sm-3">Owner</dt>
+            <dd class="col-sm-9">{{ record.owner.email }}</dd>
+            {% endif %}
+        </dl>
+    </div>
+</div>
+{% endblock %}

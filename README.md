@@ -102,18 +102,64 @@ graph TD
 
 ## Verification
 
+### Access Details
+- **Application**: `https://localhost`
+    - **Note**: Only HTTPS is allowed. HTTP requests are automatically redirected to HTTPS.
+    - **Restriction**: Direct API access is denied; only authenticated users via the web UI can access the platform features.
+- **Default Credentials**:
+    - **Admin**: `admin@example.com` / `admin123`
+    - **User**: `user@example.com` / `user123`
+
+### Creating an Admin User
+If you need to create a new admin or reset the database:
+1. Ensure the platform is running: `docker-compose up -d`
+2. Run the seed script inside the app container:
+   ```bash
+   docker-compose exec app python seed.py
+   ```
+
 ### Functional
-- **HTTPS Access**: Access the application via `https://localhost` (via VIP 172.20.0.100 if configured on host, or directly via Traefik ports).
-- **CRUD Operations**: Use `/items` endpoint for POST, GET, PUT, DELETE.
-- **Async Processing**: POST to `/items/<id>/process` to trigger a background job.
+- **HTTPS Access**: Access the application via `https://localhost`.
+- **Authentication**: Login with the default credentials provided above.
+- **Admin Management**: Once logged in as admin, navigate to "Users" in the sidebar to manage other users.
+- **CRUD Operations**: Use the "Records" section to manage your data.
 
 ### Reliability
 - **Failover**: Stop `traefik_1` to see Keepalived migrate the VIP to `traefik_2`.
 - **Persistence**: Database data is stored in a persistent volume `db_data`.
 
-### Observability
-- **Netdata**: Access metrics at `http://localhost:19999`.
-- **Traefik Dashboard**: Access at `http://localhost:8080`.
+### Observability & Monitoring
+
+The platform provides several management and monitoring interfaces:
+
+- **Netdata (System Monitoring)**: 
+    - **URL**: `http://localhost:19999`
+    - **Features**: Real-time performance metrics for CPU, memory, network, and disk I/O. It also provides per-container metrics.
+- **Traefik Dashboard (Edge Routing)**: 
+    - **URL**: `http://localhost:8080`
+    - **Features**: Visualize active HTTP routes, entry points, and service health. Note: In this MVP, the dashboard is in insecure mode for easy access.
+- **RabbitMQ Management (Message Broker)**: 
+    - **URL**: `http://localhost:15672`
+    - **Credentials**: `guest` / `guest` (default)
+    - **Features**: Monitor message queues, exchange activity, and background worker connections.
+
+### Useful Commands
+
+- **Check logs for a specific service**:
+  ```bash
+  docker-compose logs -f [service_name]
+  ```
+  *(Replace `[service_name]` with `app`, `worker`, `traefik_1`, `monitoring`, etc.)*
+
+- **Restart the monitoring stack**:
+  ```bash
+  docker-compose restart monitoring rabbitmq
+  ```
+
+- **Inspect RabbitMQ Queues via CLI**:
+  ```bash
+  docker-compose exec rabbitmq rabbitmqctl list_queues
+  ```
 
 ## Phase 3: OS-Level Clustering
 The `lb/Dockerfile.cluster` and `lb/corosync.conf` provide the foundation for OS-level clustering. In a production environment, these would be deployed on separate physical or virtual nodes to manage resources like the VIP and Traefik service across the cluster, ensuring that if a node fails, Pacemaker migrates the services to the healthy node.
