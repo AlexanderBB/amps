@@ -38,8 +38,13 @@ graph TD
 
 ### Component Details
 
+#### 0. Docker API Proxy
+- **Custom Python Proxy**: Due to macOS Docker Engine (v29+) enforcing a minimum API version (1.44), and Traefik's legacy initialization (v1.24), a custom proxy is used.
+- **Function**: It strips version prefixes from API calls and rewrites headers to ensure compatibility.
+- **Configuration**: Mounts the host's real Docker socket (verified at `/Users/aleks/.docker/run/docker.sock`).
+
 #### 1. Load Balancer Layer (Traefik & Keepalived)
-- **Traefik (v2.10)**: Acts as the edge router, handling TLS termination and dynamic service discovery via Docker labels. 
+- **Traefik (v3.1)**: Edge router handling TLS and discovery.
     - **Configuration**: Managed via `docker-compose.yml` and `lb/dynamic.yml`.
     - **Features**: Automatic HTTP-to-HTTPS redirection, SSL/TLS management with self-signed certificates.
 - **Keepalived**: Manages the Virtual IP (VIP) `172.20.0.100`. 
@@ -67,6 +72,9 @@ graph TD
 #### 5. Monitoring (Netdata)
 - **Capabilities**: Real-time performance monitoring of CPU, RAM, Disk I/O, and Docker container metrics.
 - **Dashboard**: Available on port `19999`.
+- **Known Limitations (macOS/ARM)**:
+    - Netdata runs in a degraded mode on macOS due to limited access to host kernel metrics (e.g., `apps.plugin`, `perf.plugin` warnings are benign).
+    - Some filesystem and network collectors might report "Permission denied" or "No such file" errors; these are expected in containerized macOS environments.
 
 #### 6. OS-Level Clustering (Corosync & Pacemaker)
 - **Files**: `lb/Dockerfile.cluster`, `lb/corosync.conf`.

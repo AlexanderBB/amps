@@ -85,14 +85,16 @@ def process_item(item_id):
 def health():
     return jsonify({"status": "healthy"}), 200
 
+# Create tables
+with app.app_context():
+    retries = 5
+    while retries > 0:
+        try:
+            db.create_all()
+            break
+        except OperationalError:
+            retries -= 1
+            time.sleep(2)
+
 if __name__ == '__main__':
-    with app.app_context():
-        retries = 5
-        while retries > 0:
-            try:
-                db.create_all()
-                break
-            except OperationalError:
-                retries -= 1
-                time.sleep(2)
     app.run(host='0.0.0.0', port=5000)
