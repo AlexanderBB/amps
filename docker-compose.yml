@@ -1,0 +1,155 @@
+services:
+  traefik_1:
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    user: root
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./certs:/etc/traefik/certs:ro"
+      - "./lb/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+    networks:
+      public:
+        ipv4_address: 172.20.0.10
+      private:
+    cap_add:
+      - NET_ADMIN
+    restart: always
+
+  traefik_2:
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./certs:/etc/traefik/certs:ro"
+      - "./lb/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+    networks:
+      public:
+        ipv4_address: 172.20.0.11
+      private:
+    user: root
+    cap_add:
+      - NET_ADMIN
+    restart: always
+
+  keepalived_1:
+    image: osixia/keepalived:2.0.20
+    volumes:
+      - ./lb/keepalived-master.conf:/usr/local/etc/keepalived/keepalived.conf:ro
+    network_mode: service:traefik_1
+    cap_add:
+      - NET_ADMIN
+      - NET_BROADCAST
+      - NET_RAW
+    depends_on:
+      - traefik_1
+
+  keepalived_2:
+    image: osixia/keepalived:2.0.20
+    volumes:
+      - ./lb/keepalived-backup.conf:/usr/local/etc/keepalived/keepalived.conf:ro
+    network_mode: service:traefik_2
+    cap_add:
+      - NET_ADMIN
+      - NET_BROADCAST
+      - NET_RAW
+    depends_on:
+      - traefik_2
+
+  app:
+    build: ./app
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=private"
+      - "traefik.http.routers.app.rule=Host(`localhost`)"
+      - "traefik.http.routers.app.entrypoints=websecure"
+      - "traefik.http.routers.app.tls=true"
+      - "traefik.http.services.app.loadbalancer.server.port=5000"
+    depends_on:
+      - db
+    networks:
+      - private
+    restart: always
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - private
+    restart: always
+
+  monitoring:
+    image: netdata/netdata
+    ports:
+      - "19999:19999"
+    volumes:
+      - "/proc:/host/proc:ro"
+      - "/sys:/host/sys:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - private
+    restart: always
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "15672:15672"
+    networks:
+      - private
+    restart: always
+
+  worker:
+    build: ./app
+    command: python worker.py
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - db
+      - rabbitmq
+    networks:
+      - private
+    restart: always
+
+networks:
+  public:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+  private:
+    internal: true
+
+volumes:
+  db_data:

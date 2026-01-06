@@ -1,0 +1,33 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="CustomRegExpInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="myConfigurations">
+        <list>
+          <RegExpInspectionConfiguration>
+            <option name="description" value="Finding Cyrilic charecters and marks them to be more distinct in the view" />
+            <option name="name" value="Cyrilic inspection" />
+            <option name="problemDescriptor" value="Check if this section supports Cyrilic chars and if not remove/relplace them." />
+            <option name="uuid" value="e50f04f6-47a8-3df4-9b2c-80b56a2c84aa" />
+            <option name="patterns">
+              <list>
+                <InspectionPattern>
+                  <option name="regExp" value="[\u0400-\u04FF]" />
+                  <option name="_fileType" value="UNKNOWN" />
+                  <option name="searchContext" value="ANY" />
+                </InspectionPattern>
+              </list>
+            </option>
+          </RegExpInspectionConfiguration>
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="urllib.request.unquote" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
