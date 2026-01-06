@@ -4,6 +4,7 @@ services:
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
@@ -16,7 +17,7 @@ services:
       - "8080:8080"
     user: root
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock"
       - "./certs:/etc/traefik/certs:ro"
       - "./lb/dynamic.yml:/etc/traefik/dynamic.yml:ro"
     networks:
@@ -32,6 +33,7 @@ services:
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
@@ -39,7 +41,7 @@ services:
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock"
       - "./certs:/etc/traefik/certs:ro"
       - "./lb/dynamic.yml:/etc/traefik/dynamic.yml:ro"
     networks:
@@ -52,7 +54,8 @@ services:
     restart: always
 
   keepalived_1:
-    image: osixia/keepalived:2.0.20
+    image: osixia/keepalived:2.0.20-amd64
+    platform: linux/amd64
     volumes:
       - ./lb/keepalived-master.conf:/usr/local/etc/keepalived/keepalived.conf:ro
     network_mode: service:traefik_1
@@ -64,7 +67,8 @@ services:
       - traefik_1
 
   keepalived_2:
-    image: osixia/keepalived:2.0.20
+    image: osixia/keepalived:2.0.20-amd64
+    platform: linux/amd64
     volumes:
       - ./lb/keepalived-backup.conf:/usr/local/etc/keepalived/keepalived.conf:ro
     network_mode: service:traefik_2
