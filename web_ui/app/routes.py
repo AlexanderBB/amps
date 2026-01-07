@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
 from flask_login import login_user, logout_user, login_required, current_user
 from . import db, User, Record
-from .utils import admin_required, check_owner
+from .utils import admin_required, check_owner, publish_task
 
 auth_bp = Blueprint('auth', __name__)
 main_bp = Blueprint('main', __name__)
@@ -55,17 +55,32 @@ def list_records():
         records = Record.query.filter_by(owner_id=current_user.id).all()
     return render_template('records/list.html', records=records)
 
+import uuid
+
 @records_bp.route('/records/new', methods=['GET', 'POST'])
 @login_required
 def create_record():
     if request.method == 'POST':
         title = request.form.get('title')
         description = request.form.get('description')
-        new_record = Record(title=title, description=description, owner_id=current_user.id)
-        db.session.add(new_record)
-        db.session.commit()
-        flash('Record created successfully!', 'success')
-        return redirect(url_for('records.list_records'))
+        
+        # Prepare data for RabbitMQ - including owner and correlation ID
+        # No DB write here!
+        task_data = {
+            'operation': 'record_create',
+            'request_id': str(uuid.uuid4()),
+            'owner_id': current_user.id,
+            'title': title,
+            'description': description
+        }
+        
+        if publish_task(task_data):
+            flash('Record creation request accepted!', 'info')
+            return redirect(url_for('records.list_records'))
+        else:
+            flash('Failed to submit task to queue.', 'danger')
+            return redirect(url_for('records.list_records'))
+            
     return render_template('records/form.html', action="Create")
 
 @records_bp.route('/records/<int:id>')
@@ -83,10 +98,29 @@ def edit_record(id):
     if not check_owner(record):
         abort(403)
     if request.method == 'POST':
-        record.title = request.form.get('title')
-        record.description = request.form.get('description')
+        title = request.form.get('title')
+        description = request.form.get('description')
+        
+        # Mark as updating locally
+        record.status = 'updating'
         db.session.commit()
-        flash('Record updated successfully!', 'success')
+        
+        task_data = {
+            'operation': 'record_update',
+            'record_id': id,
+            'request_id': str(uuid.uuid4()),
+            'requested_by': current_user.email,
+            'patch': {
+                'title': title,
+                'description': description
+            }
+        }
+        
+        if publish_task(task_data):
+            flash('Record update request accepted!', 'info')
+        else:
+            flash('Failed to submit update task.', 'danger')
+            
         return redirect(url_for('records.list_records'))
     return render_template('records/form.html', record=record, action="Edit")
 
@@ -96,9 +130,23 @@ def delete_record(id):
     record = Record.query.get_or_404(id)
     if not check_owner(record):
         abort(403)
-    db.session.delete(record)
+    
+    # Mark as deleting locally
+    record.status = 'deleting'
     db.session.commit()
-    flash('Record deleted successfully!', 'success')
+    
+    task_data = {
+        'operation': 'record_delete',
+        'record_id': id,
+        'request_id': str(uuid.uuid4()),
+        'requested_by': current_user.email
+    }
+    
+    if publish_task(task_data):
+        flash('Record deletion request accepted!', 'info')
+    else:
+        flash('Failed to submit deletion task.', 'danger')
+        
     return redirect(url_for('records.list_records'))
 
 # --- Admin Routes ---
@@ -116,15 +164,27 @@ def create_user():
         password = request.form.get('password')
         role = request.form.get('role')
         
+        # Check locally for immediate feedback (optional but good)
         if User.query.filter_by(email=email).first():
             flash('Email already registered.', 'danger')
             return redirect(url_for('admin.create_user'))
             
-        new_user = User(email=email, role=role)
-        new_user.set_password(password)
-        db.session.add(new_user)
-        db.session.commit()
-        flash('User created successfully!', 'success')
+        task_data = {
+            'operation': 'user_create',
+            'request_id': str(uuid.uuid4()),
+            'requested_by': current_user.email,
+            'user': {
+                'email': email,
+                'password': password,  # Note: Hashing will happen in worker
+                'role': role
+            }
+        }
+        
+        if publish_task(task_data):
+            flash('User creation request accepted!', 'info')
+        else:
+            flash('Failed to submit user creation task.', 'danger')
+            
         return redirect(url_for('admin.list_users'))
     return render_template('admin/user_form.html', action="Create")
 
@@ -133,10 +193,25 @@ def create_user():
 def edit_user(id):
     user = User.query.get_or_404(id)
     if request.method == 'POST':
-        user.email = request.form.get('email')
-        user.role = request.form.get('role')
-        db.session.commit()
-        flash('User updated successfully!', 'success')
+        email = request.form.get('email')
+        role = request.form.get('role')
+        
+        task_data = {
+            'operation': 'user_update',
+            'user_id': id,
+            'request_id': str(uuid.uuid4()),
+            'requested_by': current_user.email,
+            'patch': {
+                'email': email,
+                'role': role
+            }
+        }
+        
+        if publish_task(task_data):
+            flash('User update request accepted!', 'info')
+        else:
+            flash('Failed to submit user update task.', 'danger')
+            
         return redirect(url_for('admin.list_users'))
     return render_template('admin/user_form.html', user=user)
 
@@ -147,9 +222,20 @@ def toggle_user_active(id):
     if user.id == current_user.id:
         flash('You cannot deactivate yourself.', 'danger')
     else:
-        user.is_active = not user.is_active
-        db.session.commit()
-        flash(f'User {"activated" if user.is_active else "deactivated"} successfully!', 'success')
+        task_data = {
+            'operation': 'user_update',
+            'user_id': id,
+            'request_id': str(uuid.uuid4()),
+            'requested_by': current_user.email,
+            'patch': {
+                'is_active': not user.is_active
+            }
+        }
+        if publish_task(task_data):
+            flash('User update request accepted!', 'info')
+        else:
+            flash('Failed to submit user update task.', 'danger')
+            
     return redirect(url_for('admin.list_users'))
 
 @admin_bp.route('/admin/users/<int:id>/reset-password', methods=['POST'])
@@ -158,9 +244,19 @@ def reset_user_password(id):
     user = User.query.get_or_404(id)
     new_password = request.form.get('new_password')
     if new_password:
-        user.set_password(new_password)
-        db.session.commit()
-        flash('Password reset successfully!', 'success')
+        task_data = {
+            'operation': 'user_update',
+            'user_id': id,
+            'request_id': str(uuid.uuid4()),
+            'requested_by': current_user.email,
+            'patch': {
+                'password': new_password
+            }
+        }
+        if publish_task(task_data):
+            flash('User password reset request accepted!', 'info')
+        else:
+            flash('Failed to submit password reset task.', 'danger')
     else:
         flash('Password cannot be empty.', 'danger')
     return redirect(url_for('admin.list_users'))

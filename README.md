@@ -76,10 +76,6 @@ graph TD
     - Netdata runs in a degraded mode on macOS due to limited access to host kernel metrics (e.g., `apps.plugin`, `perf.plugin` warnings are benign).
     - Some filesystem and network collectors might report "Permission denied" or "No such file" errors; these are expected in containerized macOS environments.
 
-#### 6. OS-Level Clustering (Corosync & Pacemaker)
-- **Files**: `lb/Dockerfile.cluster`, `lb/corosync.conf`.
-- **Purpose**: Provides a template for production-grade clustering where resources (VIP, Traefik) are managed by Pacemaker instead of just Keepalived. This allows for more complex failover logic and resource grouping.
-
 ## Prerequisites
 
 - Docker and Docker Compose
@@ -161,12 +157,9 @@ The platform provides several management and monitoring interfaces:
   docker-compose exec rabbitmq rabbitmqctl list_queues
   ```
 
-## Phase 3: OS-Level Clustering
-The `lb/Dockerfile.cluster` and `lb/corosync.conf` provide the foundation for OS-level clustering. In a production environment, these would be deployed on separate physical or virtual nodes to manage resources like the VIP and Traefik service across the cluster, ensuring that if a node fails, Pacemaker migrates the services to the healthy node.
-
 ## Deliverables
 - `docker-compose.yml`: Main orchestration file.
-- `app/`: Flask application and Worker source code.
-- `lb/`: Load balancer and Keepalived/Cluster configurations.
+- `app/`: Flask application and Worker source code. (Note: `worker/` directory is also included in this layer).
+- `lb/`: Load balancer and Keepalived configurations.
 - `scripts/`: TLS generation and utility scripts.
 - `.env`: Environment configuration.
