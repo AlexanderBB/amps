@@ -27,6 +27,7 @@ services:
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--metrics.prometheus=true"
     ports:
       - "80:80"
       - "443:443"
@@ -40,6 +41,10 @@ services:
       private:
     cap_add:
       - NET_ADMIN
+    labels:
+      - "netdata.group=ha_lb"
+      - "netdata.role=Traefik-Master"
+      - "netdata.stack=amps"
     restart: always
 
   traefik_2:
@@ -58,6 +63,7 @@ services:
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
       - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--metrics.prometheus=true"
     volumes:
       - "./certs:/etc/traefik/certs:ro"
       - "./lb/dynamic.yml:/etc/traefik/dynamic.yml:ro"
@@ -67,6 +73,10 @@ services:
       private:
     cap_add:
       - NET_ADMIN
+    labels:
+      - "netdata.group=ha_lb"
+      - "netdata.role=Traefik-Backup"
+      - "netdata.stack=amps"
     restart: always
 
   keepalived_1:
@@ -100,6 +110,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}/${POSTGRES_DB}
       - SECRET_KEY=something-very-secret
+      - RABBITMQ_HOST=rabbitmq
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=amps_private"
@@ -107,6 +118,9 @@ services:
       - "traefik.http.routers.app.entrypoints=websecure"
       - "traefik.http.routers.app.tls=true"
       - "traefik.http.services.app.loadbalancer.server.port=5000"
+      - "netdata.group=frontend"
+      - "netdata.role=WebUI-API"
+      - "netdata.stack=amps"
     depends_on:
       - db
     networks:
@@ -123,6 +137,10 @@ services:
       - db_data:/var/lib/postgresql/data
     networks:
       - private
+    labels:
+      - "netdata.group=database"
+      - "netdata.role=Postgres"
+      - "netdata.stack=amps"
     restart: always
 
   monitoring:
@@ -133,6 +151,13 @@ services:
       - "/proc:/host/proc:ro"
       - "/sys:/host/sys:ro"
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "/:/host/root:ro"
+    environment:
+      - PGHOST=db
+      - PGPORT=5432
+      - PGUSER=${POSTGRES_USER}
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - PGDATABASE=${POSTGRES_DB}
     networks:
       - public
       - private
@@ -145,6 +170,10 @@ services:
     networks:
       - public
       - private
+    labels:
+      - "netdata.group=mq"
+      - "netdata.role=RabbitMQ"
+      - "netdata.stack=amps"
     restart: always
 
   worker:
@@ -161,6 +190,10 @@ services:
       - rabbitmq
     networks:
       - private
+    labels:
+      - "netdata.group=worker"
+      - "netdata.role=BackgroundWorker"
+      - "netdata.stack=amps"
     restart: always
 
 networks:

@@ -1,165 +1,202 @@
-# High-Availability Containerized Web Platform
+# High-Availability Containerized Web Platform (AMPS)
 
-This project implements a highly available containerized web application platform with OS-level clustering concepts, TLS, monitoring, and async processing.
+AMPS (Asynchronous Managed Processing System) is a containerized, high-availability web platform designed to demonstrate **clean separation of concerns**, **asynchronous processing**, and **production-grade observability** using Docker-based infrastructure.
 
-## Architecture
+The system is intentionally designed so that **no web-facing component ever mutates persistent state directly**. All state changes are executed asynchronously by background workers.
 
-```mermaid
-graph TD
-    User([User/Client]) -- HTTPS:443 --> VIP[Virtual IP: 172.20.0.100]
-    
-    subgraph LB_Layer [Load Balancer Layer - High Availability]
-        VIP --> Keepalived1[Keepalived Master]
-        VIP --> Keepalived2[Keepalived Backup]
-        Keepalived1 --- Traefik1[Traefik 1]
-        Keepalived2 --- Traefik2[Traefik 2]
-    end
+---
 
-    Traefik1 -- HTTP --> App[Flask Application]
-    Traefik2 -- HTTP --> App
-    
-    subgraph App_Layer [Application & Processing]
-        App -- SQL --> DB[(PostgreSQL)]
-        App -- Publish --> RMQ[RabbitMQ]
-        Worker[Background Worker] -- Consume --> RMQ
-        Worker -- Update --> DB
-    end
+## 1. System Overview
 
-    subgraph Monitoring_Layer [Observability]
-        Netdata[Netdata] --- Traefik1
-        Netdata --- App
-        Netdata --- DB
-    end
+### Purpose
 
-    classDef primary fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef secondary fill:#bbf,stroke:#333,stroke-width:1px;
-    class VIP,Keepalived1,Keepalived2,Traefik1,Traefik2 primary;
+The goal of AMPS is to provide a reference architecture for:
+- non-blocking user interfaces,
+- reliable background processing,
+- strict ownership of database mutations,
+- clear operational visibility of all components.
+
+This makes the system suitable both as a learning platform and as a solid foundation for real-world services.
+
+### Architectural Principles
+
+- **Asynchronous by default** – all create/update/delete operations are queued.
+- **Single-writer rule** – only workers are allowed to mutate the database.
+- **Loose coupling** – components communicate via message queues.
+- **Observability-first** – every service is measurable at runtime.
+
+### High-Level Architecture
+
+Components communicate as follows:
+
+```
+WebUI / API (HTTP)
+        ↓
+RabbitMQ (AMQP Queue)
+        ↓
+Worker (Business Logic + Validation)
+        ↓
+PostgreSQL (Persistent State)
 ```
 
-### Component Details
+---
 
-#### 0. Docker API Proxy
-- **Custom Python Proxy**: Due to macOS Docker Engine (v29+) enforcing a minimum API version (1.44), and Traefik's legacy initialization (v1.24), a custom proxy is used.
-- **Function**: It strips version prefixes from API calls and rewrites headers to ensure compatibility.
-- **Configuration**: Mounts the host's real Docker socket (verified at `/Users/aleks/.docker/run/docker.sock`).
+## 2. Components
 
-#### 1. Load Balancer Layer (Traefik & Keepalived)
-- **Traefik (v3.1)**: Edge router handling TLS and discovery.
-    - **Configuration**: Managed via `docker-compose.yml` and `lb/dynamic.yml`.
-    - **Features**: Automatic HTTP-to-HTTPS redirection, SSL/TLS management with self-signed certificates.
-- **Keepalived**: Manages the Virtual IP (VIP) `172.20.0.100`. 
-    - **Mechanism**: Uses VRRP (Virtual Router Redundancy Protocol). The Master node holds the VIP; if it fails, the Backup node takes over.
-    - **Health Checks**: Monitors the Traefik process using `killall -0 traefik`.
+| Component | Service Name | Description | Notes |
+|---------|-------------|-------------|-------|
+| **Edge Router / LB** | `traefik_1`, `traefik_2` | HTTPS termination, routing, load balancing | HA via Keepalived |
+| **VIP Management** | `keepalived_1`, `keepalived_2` | Virtual IP management (VRRP) | Ensures LB failover |
+| **Frontend + API** | `app` | Web UI, authentication, request validation, task submission | Never writes to DB |
+| **Message Queue** | `rabbitmq` | Durable AMQP queue for all mutations | Async backbone |
+| **Worker** | `worker` | Executes all create/update/delete logic | Sole DB writer |
+| **Database** | `db` | PostgreSQL persistent storage | Internal-only |
+| **Monitoring** | `monitoring` | Netdata metrics for host and containers | Operational visibility |
 
-#### 2. Application Layer (Flask)
-- **Framework**: Flask with SQLAlchemy ORM.
-- **Server**: Gunicorn (as configured in the Dockerfile).
-- **Statelessness**: The app stores no local state, allowing easy scaling. All state is in PostgreSQL or RabbitMQ.
-- **Endpoints**:
-    - `GET /items`: List all items.
-    - `POST /items`: Create a new item.
-    - `POST /items/<id>/process`: Enqueue a background job to RabbitMQ.
+---
 
-#### 3. Database Layer (PostgreSQL)
-- **Version**: 15 (Alpine based).
-- **Persistence**: Data is persisted in a Docker volume `db_data`, ensuring it survives container restarts.
-- **Access**: Restricted to the `private` internal network.
+## 3. Configuration
 
-#### 4. Async Processing (RabbitMQ & Worker)
-- **RabbitMQ**: Message broker for asynchronous tasks.
-- **Worker**: A separate Python process that consumes messages from the `task_queue` and performs background operations (e.g., updating database records).
+### 3.1 Exposed Ports
 
-#### 5. Monitoring (Netdata)
-- **Capabilities**: Real-time performance monitoring of CPU, RAM, Disk I/O, and Docker container metrics.
-- **Dashboard**: Available on port `19999`.
-- **Known Limitations (macOS/ARM)**:
-    - Netdata runs in a degraded mode on macOS due to limited access to host kernel metrics (e.g., `apps.plugin`, `perf.plugin` warnings are benign).
-    - Some filesystem and network collectors might report "Permission denied" or "No such file" errors; these are expected in containerized macOS environments.
+| Port | Service | Scope | Purpose |
+|-----|--------|-------|---------|
+| 80 | Traefik | Public | HTTP (redirect to HTTPS) |
+| 443 | Traefik | Public | HTTPS access to WebUI/API |
+| 8080 | Traefik | Internal | Traefik dashboard |
+| 15672 | RabbitMQ | Public | RabbitMQ management UI |
+| 19999 | Netdata | Public | Metrics dashboard |
+| 5432 | PostgreSQL | Internal | Database access |
 
-## Prerequisites
+### 3.2 Environment Variables
 
-- Docker and Docker Compose
-- openssl (for generating certificates)
+| Variable | Service | Description |
+|--------|---------|-------------|
+| `DATABASE_URL` | app | SQLAlchemy connection string |
+| `SECRET_KEY` | app | Flask session signing key |
+| `RABBITMQ_HOST` | app, worker | Broker hostname |
+| `POSTGRES_USER` | db, worker | DB user |
+| `POSTGRES_PASSWORD` | db, worker | DB password |
+| `POSTGRES_DB` | db, worker | Database name |
 
-## Setup and Startup
+> Sensitive values are provided via `.env` or compose overrides and must not be committed.
 
-1. **Generate TLS Certificates**:
-   ```bash
-   bash scripts/generate_certs.sh
-   ```
+### 3.3 Volumes
 
-2. **Configure Environment**:
-   The project includes a default `.env` file. You can modify it if needed.
+| Volume | Purpose |
+|------|---------|
+| `db_data` | Persistent PostgreSQL data |
+| `rabbitmq_data` | Durable queue storage |
+| `netdata_config` | Netdata configuration |
+| `netdata_cache` | Netdata runtime cache |
 
-3. **Start the Platform**:
-   ```bash
-   docker-compose up --build
-   ```
+---
 
-## Verification
+## 4. Running the Project
 
-### Access Details
-- **Application**: `https://localhost`
-    - **Note**: Only HTTPS is allowed. HTTP requests are automatically redirected to HTTPS.
-    - **Restriction**: Direct API access is denied; only authenticated users via the web UI can access the platform features.
-- **Default Credentials**:
-    - **Admin**: `admin@example.com` / `admin123`
-    - **User**: `user@example.com` / `user123`
+### Prerequisites
 
-### Creating an Admin User
-If you need to create a new admin or reset the database:
-1. Ensure the platform is running: `docker-compose up -d`
-2. Run the seed script inside the app container:
-   ```bash
-   docker-compose exec app python seed.py
-   ```
+- Docker Engine
+- Docker Compose
+- OpenSSL (for local TLS)
 
-### Functional
-- **HTTPS Access**: Access the application via `https://localhost`.
-- **Authentication**: Login with the default credentials provided above.
-- **Admin Management**: Once logged in as admin, navigate to "Users" in the sidebar to manage other users.
-- **CRUD Operations**: Use the "Records" section to manage your data.
+### Startup Steps
 
-### Reliability
-- **Failover**: Stop `traefik_1` to see Keepalived migrate the VIP to `traefik_2`.
-- **Persistence**: Database data is stored in a persistent volume `db_data`.
+1. **Generate certificates**
+```bash
+bash scripts/generate_certs.sh
+```
 
-### Observability & Monitoring
+2. **Start the full stack**
+```bash
+docker-compose up --build -d
+```
 
-The platform provides several management and monitoring interfaces:
+3. **Verify services**
+```bash
+docker-compose ps
+```
 
-- **Netdata (System Monitoring)**: 
-    - **URL**: `http://localhost:19999`
-    - **Features**: Real-time performance metrics for CPU, memory, network, and disk I/O. It also provides per-container metrics.
-- **Traefik Dashboard (Edge Routing)**: 
-    - **URL**: `http://localhost:8080`
-    - **Features**: Visualize active HTTP routes, entry points, and service health. Note: In this MVP, the dashboard is in insecure mode for easy access.
-- **RabbitMQ Management (Message Broker)**: 
-    - **URL**: `http://localhost:15672`
-    - **Credentials**: `guest` / `guest` (default)
-    - **Features**: Monitor message queues, exchange activity, and background worker connections.
+4. **Stop the stack**
+```bash
+docker-compose down
+```
 
-### Useful Commands
+---
 
-- **Check logs for a specific service**:
-  ```bash
-  docker-compose logs -f [service_name]
-  ```
-  *(Replace `[service_name]` with `app`, `worker`, `traefik_1`, `monitoring`, etc.)*
+## 5. Testing & Validation
 
-- **Restart the monitoring stack**:
-  ```bash
-  docker-compose restart monitoring rabbitmq
-  ```
+### Functional Validation
 
-- **Inspect RabbitMQ Queues via CLI**:
-  ```bash
-  docker-compose exec rabbitmq rabbitmqctl list_queues
-  ```
+1. Open `https://localhost`
+2. Login with:
+   - user: `admin@example.com`
+   - password: `admin123`
+3. Create a new record from the UI.
+4. You are immediately returned to the list view with:
+   > “Record creation request accepted!”
+5. Wait briefly and refresh – the record appears once processed by the worker.
+6. Edit or delete the record – changes apply asynchronously.
 
-## Deliverables
-- `docker-compose.yml`: Main orchestration file.
-- `app/`: Flask application and Worker source code. (Note: `worker/` directory is also included in this layer).
-- `lb/`: Load balancer and Keepalived configurations.
-- `scripts/`: TLS generation and utility scripts.
-- `.env`: Environment configuration.
+### What This Proves
+
+- UI is non-blocking
+- DB mutations are async
+- Worker owns all state changes
+- System is resilient to worker delays
+
+---
+
+## 6. Configuration Files Reference
+
+| File | Description |
+|----|-------------|
+| `docker-compose.yml` | Main orchestration file |
+| `web_ui/Dockerfile` | Flask + Gunicorn image |
+| `worker/Dockerfile` | Background consumer image |
+| `lb/keepalived-*.conf` | HA VRRP configuration |
+| `lb/dynamic.yml` | Traefik TLS and routing |
+| `scripts/generate_certs.sh` | Local TLS generation |
+
+---
+
+## 7. Certificates and Security
+
+- TLS is terminated at Traefik.
+- Certificates are self-signed for local use.
+- DB and Docker socket are isolated on private networks.
+- Passwords are hashed in the worker using `werkzeug.security`.
+- Plaintext credentials are never persisted.
+
+---
+
+## 8. Observability
+
+Netdata provides:
+- per-container CPU, memory, disk, network metrics,
+- PostgreSQL performance charts,
+- RabbitMQ queue depth and throughput,
+- host-level resource usage.
+
+Access via:
+```
+http://localhost:19999
+```
+
+---
+
+## 9. Operational Guarantees
+
+- No synchronous DB writes from web handlers
+- Safe retries via AMQP
+- Clear separation of responsibilities
+- HA-ready by design
+
+---
+
+## 10. Intended Audience
+
+- Backend / Platform Engineers
+- DevOps / SREs
+- Architecture reviewers
+- Educational use (async systems)
